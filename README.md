@@ -1,4 +1,4 @@
-`**Security Auditing Dashboard**`
+`Security Auditing Dashboard`
 
 
 The Security Auditing Dashboard is a Python-based GUI application designed to streamline the process of importing, managing, retrieving, and visualizing security-related data. This project integrates multiple technologies to provide a comprehensive tool for security audits and data analysis.
@@ -26,6 +26,7 @@ Non-Numeric Data Handling: Display of non-numeric data in a tabular format using
 **Technical Stack**
 
 Programming Language: Python
+
 Libraries and Frameworks: Tkinter, Pandas, Matplotlib, MySQL Connector, PIL (Python Imaging Library)
 Database: MySQL
 
