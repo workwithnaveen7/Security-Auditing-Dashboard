@@ -1,0 +1,397 @@
+import tkinter as tk
+from tkinter import messagebox, filedialog, ttk
+from PIL import Image, ImageTk
+import pandas as pd
+import mysql.connector
+import matplotlib.pyplot as plt
+
+
+def connect_to_mysql(host, user, password, database):
+    try:
+        conn = mysql.connector.connect(
+            host=host,
+            user=user,
+            passwd=password,
+            database=database
+        )
+        print("Connected to MySQL database")
+        return conn
+    except mysql.connector.Error as e:
+        print(f"Error connecting to MySQL database: {e}")
+        return None
+
+
+def create_tables(connection):
+    create_users_table_query = """
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(255) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL
+    )
+    """
+    
+    create_import_logs_table_query = """
+    CREATE TABLE IF NOT EXISTS import_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(255) NOT NULL,
+        table_name VARCHAR(255) NOT NULL,
+        import_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(create_users_table_query)
+        cursor.execute(create_import_logs_table_query)
+        connection.commit()
+        print("Tables 'users' and 'import_logs' created successfully")
+    except mysql.connector.Error as e:
+        print(f"Error creating tables: {e}")
+
+# registration
+
+def register_user(connection, username, password):
+    insert_query = """
+    INSERT INTO users (username, password) VALUES (%s, %s)
+    """
+    try:
+        cursor = connection.cursor()
+        cursor.execute(insert_query, (username, password))
+        connection.commit()
+        print(f"User '{username}' registered successfully")
+        messagebox.showinfo("Success", "Registration successful!")
+    except mysql.connector.Error as e:
+        print(f"Error registering user: {e}")
+        messagebox.showerror("Error", f"Error registering user: {e}")
+
+# login 
+
+def login_user(connection, username, password):
+    select_query = """
+    SELECT * FROM users WHERE username = %s AND password = %s
+    """
+    try:
+        cursor = connection.cursor()
+        cursor.execute(select_query, (username, password))
+        user = cursor.fetchone()
+        if user:
+            print(f"Login successful. Welcome, {username}!")
+            messagebox.showinfo("Success", f"Welcome, {username}!")
+            return True
+        else:
+            print("Invalid username or password")
+            messagebox.showerror("Error", "Invalid username or password")
+            return False
+    except mysql.connector.Error as e:
+        print(f"Error authenticating user: {e}")
+        messagebox.showerror("Error", f"Error authenticating user: {e}")
+        return False
+
+# Function to load excel data into MySQL
+def load_excel_to_mysql(mysql_conn, excel_file, username):
+    try:
+        xls = pd.ExcelFile(excel_file)
+        
+        for sheet_name in xls.sheet_names:
+            df = pd.read_excel(excel_file, sheet_name=sheet_name)
+            df = df.where(pd.notnull(df), None)
+
+            cursor = mysql_conn.cursor()
+            create_table_query = f"CREATE TABLE IF NOT EXISTS `{sheet_name}` ("
+            for col in df.columns:
+                dtype = 'VARCHAR(255)'  
+                if pd.api.types.is_integer_dtype(df[col]):
+                    dtype = 'INT'
+                elif pd.api.types.is_float_dtype(df[col]):
+                    dtype = 'FLOAT'
+                elif pd.api.types.is_datetime64_any_dtype(df[col]):
+                    dtype = 'DATETIME'
+                
+                create_table_query += f"`{col}` {dtype}, "
+            
+            create_table_query = create_table_query.rstrip(', ') + ")"
+            cursor.execute(create_table_query)
+
+            columns = ', '.join([f'`{col}`' for col in df.columns])
+            placeholders = ', '.join(['%s'] * len(df.columns))
+            insert_query = f"INSERT INTO `{sheet_name}` ({columns}) VALUES ({placeholders})"
+            
+            for index, row in df.iterrows():
+                row = tuple(str(val)[:255] if isinstance(val, str) else val for val in row)
+                cursor.execute(insert_query, row)
+
+            log_query = "INSERT INTO import_logs (username, table_name, import_time) VALUES (%s, %s, NOW())"
+            cursor.execute(log_query, (username, sheet_name))
+
+            mysql_conn.commit()
+            print(f"Data from sheet '{sheet_name}' imported successfully by {username}")
+            messagebox.showinfo("Success", f"Data from sheet '{sheet_name}' imported successfully by {username}")
+    
+    except mysql.connector.Error as e:
+        print(f"Error importing data to MySQL: {e}")
+        messagebox.showerror("Error", f"Error importing data to MySQL: {e}")
+
+# to check if data has already been imported
+def has_data_been_imported(connection, sheet_name, username):
+    try:
+        cursor = connection.cursor()
+        query = "SELECT COUNT(*) FROM import_logs WHERE username = %s AND table_name = %s"
+        cursor.execute(query, (username, sheet_name))
+        result = cursor.fetchone()
+        return result[0] > 0
+    except mysql.connector.Error as e:
+        print(f"Error checking import status: {e}")
+        messagebox.showerror("Error", f"Error checking import status: {e}")
+        return False
+
+# to retrieve data from selected tables and columns
+def retrieve_data_from_tables(mysql_conn, selected_tables, selected_columns):
+    try:
+        cursor = mysql_conn.cursor()
+        data = {}
+        for table in selected_tables:
+            columns = ', '.join([f"`{col}`" for col in selected_columns[table]])
+            cursor.execute(f"SELECT {columns} FROM `{table}`")
+            rows = cursor.fetchall()
+            column_names = [desc[0] for desc in cursor.description]
+            data[table] = (column_names, rows)
+        return data
+    except mysql.connector.Error as e:
+        print(f"Error retrieving data from MySQL: {e}")
+        messagebox.showerror("Error", f"Error retrieving data from MySQL: {e}")
+        return {}
+
+# Function to plot data
+
+
+def plot_data(data, plot_type):
+    try:
+        if not data:
+            messagebox.showwarning("No Data", "No data available for plotting.")
+            return
+
+        for table, (columns, rows) in data.items():
+            df = pd.DataFrame(rows, columns=columns)
+            plt.figure()
+
+            if df.select_dtypes(include=['number']).empty:
+                display_data_in_table(df)
+            else:
+                if plot_type == 'Bar Graph':
+                    df.plot(kind='bar')
+                elif plot_type == 'Pie Chart':
+                    df.plot(kind='pie', subplots=True)
+                elif plot_type == 'Scatter Plot':
+                    pd.plotting.scatter_matrix(df)
+                plt.title(f"Data from table '{table}'")
+
+        plt.show()
+    except Exception as e:
+        print(f"Error plotting data: {e}")
+        messagebox.showerror("Error", f"Error plotting data: {e}")
+
+#display data in a table if no numeric data to plot
+def display_data_in_table(df):
+    table_window = tk.Toplevel()
+    table_window.title("Data Table")
+
+    frame = tk.Frame(table_window)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+
+    canvas = tk.Canvas(frame)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+
+    v_scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+    v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    h_scrollbar = ttk.Scrollbar(frame, orient="horizontal", command=canvas.xview)
+    h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+
+    scrollable_frame = tk.Frame(canvas)
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+
+    scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+
+    table = ttk.Treeview(scrollable_frame, show="headings")
+    table.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+
+    table["columns"] = list(df.columns)
+    for col in df.columns:
+        table.heading(col, text=col)
+        table.column(col, anchor="w")
+
+    # insert data into the table
+    for index, row in df.iterrows():
+        table.insert("", "end", values=list(row))
+
+    table_window.mainloop()
+
+
+
+# function to create table checkboxes
+
+
+def create_table_checkboxes(mysql_conn):
+
+    for widget in checkbox_frame.winfo_children():
+        widget.destroy()
+
+
+    canvas = tk.Canvas(checkbox_frame)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+
+    v_scrollbar = ttk.Scrollbar(checkbox_frame, orient="vertical", command=canvas.yview)
+    v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    h_scrollbar = ttk.Scrollbar(checkbox_frame, orient="horizontal", command=canvas.xview)
+    h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+
+    scrollable_frame = tk.Frame(canvas)
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+ 
+    scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+
+    # to fetch tables and columns from database
+    cursor = mysql_conn.cursor()
+    cursor.execute("SHOW TABLES")
+    tables = [row[0] for row in cursor.fetchall()]
+
+    global table_vars, column_vars
+    table_vars = {}
+    column_vars = {}
+
+    # to create checkboxes for each table and its columns
+    for table in tables:
+        table_var = tk.BooleanVar()
+        table_checkbox = tk.Checkbutton(scrollable_frame, text=table, variable=table_var)
+        table_checkbox.pack(anchor='w')
+        table_vars[table] = table_var
+
+        column_vars[table] = []
+        cursor.execute(f"SHOW COLUMNS FROM `{table}`")
+        columns = [row[0] for row in cursor.fetchall()]
+        for column in columns:
+            column_var = tk.BooleanVar()
+            column_checkbox = tk.Checkbutton(scrollable_frame, text=column, variable=column_var)
+            column_checkbox.pack(anchor='w', padx=20)
+            column_vars[table].append((column, column_var))
+
+
+def main():
+    # set your mysql credentials "host name","user name","password","database name" 
+    mysql_conn = connect_to_mysql("localhost", "root", "pass", "project_security") # change according to your credentials
+
+    if mysql_conn:
+        create_tables(mysql_conn)
+
+    root = tk.Tk()
+    root.title("Security Auditing Dashboard")
+
+
+    bg_image = Image.open("C:\\Users\\hp\\Downloads\\bgimg.png")  # Update the path
+    bg_image = bg_image.resize((root.winfo_screenwidth(), root.winfo_screenheight()), Image.LANCZOS)
+    bg_photo = ImageTk.PhotoImage(bg_image)
+    bg_label = tk.Label(root, image=bg_photo)
+    bg_label.place(relwidth=1, relheight=1)
+
+    def register_user_ui():
+        username = username_entry.get()
+        password = password_entry.get()
+        if username == "" or password == "":
+            messagebox.showerror("Error", "Username and password cannot be empty!")
+            return
+        register_user(mysql_conn, username, password)
+
+    def login_user_ui():
+        username = username_entry.get()
+        password = password_entry.get()
+        if username == "" or password == "":
+            messagebox.showerror("Error", "Username and password cannot be empty!")
+            return
+        if login_user(mysql_conn, username, password):
+            import_frame.grid(row=4, column=0, columnspan=2, pady=10, sticky="ew")
+            select_frame.grid(row=5, column=0, columnspan=2, pady=10, sticky="ew")
+            create_table_checkboxes(mysql_conn)
+
+    def browse_excel_file():
+        file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
+        excel_file_entry.delete(0, tk.END)
+        excel_file_entry.insert(0, file_path)
+
+    def import_data():
+        excel_file = excel_file_entry.get()
+        username = username_entry.get()
+        if not excel_file:
+            messagebox.showerror("Error", "Please select an Excel file first.")
+            return
+
+        xls = pd.ExcelFile(excel_file)
+        sheet_names = xls.sheet_names
+        already_imported = False
+        
+        for sheet_name in sheet_names:
+            if has_data_been_imported(mysql_conn, sheet_name, username):
+                messagebox.showinfo("Info", f"The sheet '{sheet_name}' has already been imported.")
+                already_imported = True
+
+        if not already_imported:
+            load_excel_to_mysql(mysql_conn, excel_file, username)
+            create_table_checkboxes(mysql_conn)
+
+    def retrieve_data_ui():
+        selected_tables = [table for table, var in table_vars.items() if var.get()]
+        selected_columns = {table: [col for col, var in column_vars[table] if var.get()] for table in selected_tables}
+
+        data = retrieve_data_from_tables(mysql_conn, selected_tables, selected_columns)
+        plot_type = plot_type_combobox.get()
+        plot_data(data, plot_type)
+
+
+    tk.Label(root, text="Username:", bg='lightgrey').grid(row=0, column=0, padx=10, pady=5, sticky="e")
+    username_entry = tk.Entry(root)
+    username_entry.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
+
+    tk.Label(root, text="Password:", bg='lightgrey').grid(row=1, column=0, padx=10, pady=5, sticky="e")
+    password_entry = tk.Entry(root, show="*")
+    password_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+
+    tk.Button(root, text="Register", command=register_user_ui).grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+    tk.Button(root, text="Login", command=login_user_ui).grid(row=2, column=1, padx=10, pady=10, sticky="ew")
+
+    import_frame = tk.Frame(root, bg='lightgrey')
+    tk.Label(import_frame, text="Excel File:", bg='lightgrey').grid(row=0, column=0, padx=10, pady=5, sticky="e")
+    excel_file_entry = tk.Entry(import_frame, width=50)
+    excel_file_entry.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
+    tk.Button(import_frame, text="Browse", command=browse_excel_file).grid(row=0, column=2, padx=10, pady=5)
+    tk.Button(import_frame, text="Import Data", command=import_data).grid(row=1, column=0, columnspan=3, pady=10)
+
+    select_frame = tk.Frame(root, bg='lightgrey')
+    global checkbox_frame
+    checkbox_frame = tk.Frame(select_frame, bg='lightgrey')
+    checkbox_frame.grid(row=0, column=0, sticky="nsew")
+    tk.Button(select_frame, text="Retrieve Data", command=retrieve_data_ui).grid(row=1, column=0, pady=10)
+
+
+
+    tk.Label(root, text="Select Plot Type:", bg='lightgrey').grid(row=6, column=0, padx=10, pady=5, sticky="e")
+    plot_type_combobox = ttk.Combobox(root, values=["Bar Graph", "Pie Chart", "Scatter Plot"])
+    plot_type_combobox.grid(row=6, column=1, padx=10, pady=5, sticky="ew")
+    plot_type_combobox.current(0)
+
+    root.grid_rowconfigure(4, weight=1)
+    root.grid_rowconfigure(5, weight=1)
+    root.grid_columnconfigure(0, weight=1)
+    root.grid_columnconfigure(1, weight=1)
+
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
