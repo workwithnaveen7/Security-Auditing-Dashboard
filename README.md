@@ -3,16 +3,19 @@
 
 The Security Auditing Dashboard is a Python-based GUI application designed to streamline the process of importing, managing, retrieving, and visualizing security-related data. This project integrates multiple technologies to provide a comprehensive tool for security audits and data analysis.
 
-**Features:**
 
-~*User Management*
+<ins>**Features:**</ins>
+
+
+<ins>User Management</ins>
+
 
 Registration and Login: Secure user registration and authentication using MySQL.
 
 Error Handling: Robust error handling with user feedback for registration and login processes.
 
 
-<u>Data Import and Management</u>
+<ins>Data Import and Management</ins>
 
 
 Excel Data Import: Capability to import data from Excel files into a MySQL database.
@@ -33,7 +36,7 @@ Filtering: Apply filters to the data to narrow down the results.
 
 
 
-**Technical Stack**
+<ins>**Technical Stack**</ins>
 
 Programming Language: Python
 
