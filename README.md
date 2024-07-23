@@ -11,7 +11,9 @@ Registration and Login: Secure user registration and authentication using MySQL.
 
 Error Handling: Robust error handling with user feedback for registration and login processes.
 
-~*Data Import and Management*
+
+<u>Data Import and Management<u>
+
 
 Excel Data Import: Capability to import data from Excel files into a MySQL database.
 
@@ -20,7 +22,7 @@ Dynamic Table Creation: Automatic creation of database tables based on the struc
 Import Logs: Maintenance of import logs to prevent duplicate data imports.
 
 
-<ins>*Data Retrieval and Visualization*</ins>
+<ins>Data Retrieval and Visualization</ins>
 
 
 Custom Data Selection: Users can select specific tables and columns for data retrieval.
