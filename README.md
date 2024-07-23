@@ -19,13 +19,16 @@ Dynamic Table Creation: Automatic creation of database tables based on the struc
 
 Import Logs: Maintenance of import logs to prevent duplicate data imports.
 
-~*Data Retrieval and Visualization*
+
+<ins>*Data Retrieval and Visualization*</ins>
+
 
 Custom Data Selection: Users can select specific tables and columns for data retrieval.
 
 Data Visualization: Visualization of retrieved data using various plot types (Bar Graph, Pie Chart, Scatter Plot) via Matplotlib.
 
-Non-Numeric Data Handling: Display of non-numeric data in a tabular format using Tkinter’s Treeview.
+Filtering: Apply filters to the data to narrow down the results.
+
 
 
 **Technical Stack**
