@@ -12,7 +12,7 @@ Registration and Login: Secure user registration and authentication using MySQL.
 Error Handling: Robust error handling with user feedback for registration and login processes.
 
 
-<u>Data Import and Management<u>
+<u>Data Import and Management</u>
 
 
 Excel Data Import: Capability to import data from Excel files into a MySQL database.
