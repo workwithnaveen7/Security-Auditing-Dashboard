@@ -290,13 +290,13 @@ def retrieve_data_ui():
 
 def main():
     global mysql_conn
-    mysql_conn = connect_to_mysql("localhost", "root", "2005", "project_security")
+    mysql_conn = connect_to_mysql("localhost", "root", "password", "project_security") #Enter your mysql credentials! 
     if mysql_conn:
         create_tables(mysql_conn)
         root = tk.Tk()
         root.title("Security Auditing Dashboard")
         
-        bg_image = Image.open("C:\\Users\\hp\\Downloads\\bgimg.png")
+        bg_image = Image.open("C:\\Users\\hp\\Downloads\\bgimg.png") #Enter the path of your background image with extension!!
         bg_image = bg_image.resize((root.winfo_screenwidth(), root.winfo_screenheight()), Image.LANCZOS)
         bg_photo = ImageTk.PhotoImage(bg_image)
         bg_label = tk.Label(root, image=bg_photo)
