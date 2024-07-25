@@ -17,7 +17,7 @@ The Security Auditing Dashboard is a Dash web application for security auditing 
 ## Usage
 
 - **User Authentication**
-Register: Enter a username and password, then click "Register" to create a new user.
+\nRegister: Enter a username and password, then click "Register" to create a new user.
 
 Login: Enter your username and password, then click "Login" to access the dashboard.
 - **Data Import**
