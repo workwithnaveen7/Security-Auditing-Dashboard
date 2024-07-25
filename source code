@@ -1,9 +1,14 @@
-import tkinter as tk
-from tkinter import messagebox, filedialog, ttk
-from PIL import Image, ImageTk
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+from dash.exceptions import PreventUpdate
 import pandas as pd
 import mysql.connector
-import matplotlib.pyplot as plt
+import plotly.express as px
+import base64
+import io
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 def connect_to_mysql(host, user, password, database):
     try:
@@ -50,10 +55,10 @@ def register_user(connection, username, password):
         cursor.execute(insert_query, (username, password))
         connection.commit()
         print(f"User '{username}' registered successfully")
-        messagebox.showinfo("Success", "Registration successful!")
+        return True
     except mysql.connector.Error as e:
         print(f"Error registering user: {e}")
-        messagebox.showerror("Error", f"Error registering user: {e}")
+        return False
 
 def login_user(connection, username, password):
     select_query = """
@@ -64,15 +69,12 @@ def login_user(connection, username, password):
         user = cursor.fetchone()
         if user:
             print(f"Login successful. Welcome, {username}!")
-            messagebox.showinfo("Success", f"Welcome, {username}!")
             return True
         else:
             print("Invalid username or password")
-            messagebox.showerror("Error", "Invalid username or password")
             return False
     except mysql.connector.Error as e:
         print(f"Error authenticating user: {e}")
-        messagebox.showerror("Error", f"Error authenticating user: {e}")
         return False
 
 def load_excel_to_mysql(mysql_conn, excel_file, username):
@@ -104,29 +106,15 @@ def load_excel_to_mysql(mysql_conn, excel_file, username):
             cursor.execute(log_query, (username, sheet_name))
             mysql_conn.commit()
             print(f"Data from sheet '{sheet_name}' imported successfully by {username}")
-            messagebox.showinfo("Success", f"Data from sheet '{sheet_name}' imported successfully by {username}")
     except mysql.connector.Error as e:
         print(f"Error importing data to MySQL: {e}")
-        messagebox.showerror("Error", f"Error importing data to MySQL: {e}")
-
-def has_data_been_imported(connection, sheet_name, username):
-    try:
-        cursor = connection.cursor()
-        query = "SELECT COUNT(*) FROM import_logs WHERE username = %s AND table_name = %s"
-        cursor.execute(query, (username, sheet_name))
-        result = cursor.fetchone()
-        return result[0] > 0
-    except mysql.connector.Error as e:
-        print(f"Error checking import status: {e}")
-        messagebox.showerror("Error", f"Error checking import status: {e}")
-        return False
 
 def retrieve_data_from_tables(mysql_conn, selected_tables, selected_columns):
     try:
         cursor = mysql_conn.cursor()
         data = {}
         for table in selected_tables:
-            columns = ', '.join([f"`{col}`" for col in selected_columns[table]])
+            columns = ', '.join([f"`{col}`" for col in selected_columns.get(table, [])])
             cursor.execute(f"SELECT {columns} FROM `{table}`")
             rows = cursor.fetchall()
             column_names = [desc[0] for desc in cursor.description]
@@ -134,241 +122,249 @@ def retrieve_data_from_tables(mysql_conn, selected_tables, selected_columns):
         return data
     except mysql.connector.Error as e:
         print(f"Error retrieving data from MySQL: {e}")
-        messagebox.showerror("Error", f"Error retrieving data from MySQL: {e}")
         return {}
 
-def filter_data(data, selected_filters):
-    filtered_data = {}
-    common_columns = set.intersection(*[set(df.columns) for df in data.values()])
-
+def plot_data(data, graph_types):
+    figures = []
     for table, df in data.items():
-        if not df.empty:
-            for col, value in selected_filters.items():
-                if col in common_columns and col in df.columns:
-                    df = df[df[col] == value]
-            filtered_data[table] = df
-    return filtered_data
+        if df.empty:
+            continue
+        for column in df.columns:
+            graph_type = graph_types.get(f"{table}:{column}", "bar")
+            if df[column].dtype == 'object':  # String data
+                counts = df[column].value_counts()
+                if graph_type == "bar":
+                    fig = px.bar(counts, title=f"Bar Graph for {table} - {column}")
+                elif graph_type == "pie":
+                    fig = px.pie(names=counts.index, values=counts.values, title=f"Pie Chart for {table} - {column}")
+                elif graph_type == "area":
+                    fig = px.area(counts.sort_index(), title=f"Area Chart for {table} - {column}")
+                else:
+                    continue
+                figures.append(fig)
+                
+            else:  # Numeric data
+                if graph_type == "bar":
+                    fig = px.bar(df[column].sort_values(ascending=False), title=f"Bar Graph for {table} - {column}")
+                elif graph_type == "pie":
+                    if df[column].nunique() <= 10:  # Example condition
+                        fig = px.pie(df[column].value_counts(), title=f"Pie Chart for {table} - {column}")
+                    else:
+                        continue
+                elif graph_type == "area":
+                    fig = px.area(df[column].sort_values(ascending=False), title=f"Area Chart for {table} - {column}")
+                else:
+                    continue
+                figures.append(fig)
+                
+    return figures
 
-def apply_filters_ui(data):
-    filter_window = tk.Toplevel()
-    filter_window.title("Apply Filters")
-    
-    filter_vars = {}
-    
-    # Find common columns across all datasets
-    common_columns = set.intersection(*[set(df.columns) for df in data.values()])
+app.layout = dbc.Container([
+    dbc.Row([
+        dbc.Col(html.H1("Security Auditing Dashboard", className="text-center"), className="mb-5 mt-5")
+    ]),
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col(dbc.Label("Username"), width=4),
+                        dbc.Col(dbc.Input(id="username", type="text", placeholder="Enter username"), width=8)
+                    ]),
+                    dbc.Row([
+                        dbc.Col(dbc.Label("Password"), width=4),
+                        dbc.Col(dbc.Input(id="password", type="password", placeholder="Enter password"), width=8)
+                    ]),
+                    dbc.Button("Register", id="register-button", color="primary", className="mr-2"),
+                    dbc.Button("Login", id="login-button", color="secondary"),
+                    html.Div(id="login-output")
+                ])
+            ])
+        ], width=4)
+    ]),
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col(dbc.Label("Excel File"), width=4),
+                        dbc.Col(dcc.Upload(
+                            id='upload-data',
+                            children=html.Div([
+                                'Drag and Drop or ',
+                                html.A('Select Files')
+                            ]),
+                            style={
+                                'width': '100%',
+                                'height': '60px',
+                                'lineHeight': '60px',
+                                'borderWidth': '1px',
+                                'borderStyle': 'dashed',
+                                'borderRadius': '5px',
+                                'textAlign': 'center',
+                                'margin': '10px'
+                            },
+                            multiple=False
+                        ), width=8)
+                    ]),
+                    dbc.Button("Import Data", id="import-data-button", color="primary", className="mr-2"),
+                    html.Div(id="import-output")
+                ])
+            ])
+        ], width=8)
+    ]),
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    dbc.Button("Retrieve Data", id="retrieve-data-button", color="primary", className="mr-2"),
+                    dcc.Dropdown(id="table-dropdown", multi=True, placeholder="Select tables", style={'width': '100%'}),
+                    dcc.Dropdown(id="column-dropdown", multi=True, placeholder="Select columns", style={'width': '100%'}),
+                    html.Div(id="column-graph-type-container"),
+                    dbc.Button("Plot Graph", id="apply-filters-button", color="secondary", className="mr-2"),
+                    html.Div(id="plot-output")
+                ])
+            ])
+        ], width=12)
+    ])
+], fluid=True)
 
-    for table, df in data.items():
-        if not df.empty:
-            tk.Label(filter_window, text=f"Filters for {table}").pack()
-            for col in common_columns:
-                if col in df.columns:
-                    filter_var = tk.StringVar()
-                    filter_entry = tk.Entry(filter_window, textvariable=filter_var)
-                    filter_entry.pack()
-                    tk.Label(filter_window, text=f"Filter by {col}:").pack()
-                    filter_vars[col] = filter_var
+@app.callback(
+    Output('login-output', 'children'),
+    [Input('register-button', 'n_clicks'),
+     Input('login-button', 'n_clicks')],
+    [State('username', 'value'),
+     State('password', 'value')]
+)
+def authenticate(register_clicks, login_clicks, username, password):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
 
-    def apply_filters():
-        selected_filters = {col: var.get() for col, var in filter_vars.items() if var.get()}
-        filtered_data = filter_data(data, selected_filters)
-        plot_data(filtered_data)
-        filter_window.destroy()
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-    tk.Button(filter_window, text="Apply Filters", command=apply_filters).pack()
+    if not username or not password:
+        return "Please enter both username and password."
 
-def plot_data(data):
+    print(f"Button clicked: {button_id}")
+    print(f"Username: {username}")
+
+    mysql_conn = connect_to_mysql("localhost", "root", "2005", "project_security")
+    if not mysql_conn:
+        return "Failed to connect to the database."
+
+    create_tables(mysql_conn)
+
+    if button_id == 'register-button':
+        success = register_user(mysql_conn, username, password)
+        if success:
+            return "Registration successful!"
+        else:
+            return "Registration failed."
+
+    elif button_id == 'login-button':
+        success = login_user(mysql_conn, username, password)
+        if success:
+            return "Login successful!"
+        else:
+            return "Invalid username or password."
+
+
+@app.callback(
+    [Output('table-dropdown', 'options'),
+     Output('column-dropdown', 'options')],
+    Input('retrieve-data-button', 'n_clicks'),
+    State('table-dropdown', 'value')
+)
+def update_dropdowns(n_clicks, selected_tables):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    if ctx.triggered[0]['prop_id'] == 'retrieve-data-button.n_clicks':
+        try:
+            mysql_conn = connect_to_mysql("localhost", "root", "2005", "project_security")
+            cursor = mysql_conn.cursor()
+            cursor.execute("SHOW TABLES")
+            tables = cursor.fetchall()
+            table_options = [{'label': table[0], 'value': table[0]} for table in tables]
+
+            column_options = []
+            if selected_tables:
+                for table in selected_tables:
+                    cursor.execute(f"SHOW COLUMNS FROM `{table}`")
+                    columns = cursor.fetchall()
+                    for column in columns:
+                        column_options.append({'label': f"{table}: {column[0]}", 'value': f"{table}:{column[0]}"})
+
+            return table_options, column_options
+
+        except mysql.connector.Error as e:
+            print(f"Error updating dropdowns: {e}")
+            return [], []
+
+@app.callback(
+    Output('column-graph-type-container', 'children'),
+    Input('column-dropdown', 'value')
+)
+def update_graph_type_dropdowns(selected_columns):
+    if not selected_columns:
+        return ""
+
+    options = [{'label': graph_type, 'value': graph_type} for graph_type in ["bar", "pie", "area"]]
+
+    dropdowns = []
+    for col in selected_columns:
+        dropdowns.append(
+            dbc.Row([
+                dbc.Col(dbc.Label(f"Graph Type for {col}"), width=4),
+                dbc.Col(dcc.Dropdown(
+                    id={'type': 'graph-type-dropdown', 'index': col},
+                    options=options,
+                    value='bar',
+                    style={'width': '100%'}
+                ), width=8)
+            ])
+        )
+
+    return dropdowns
+
+@app.callback(
+    Output('plot-output', 'children'),
+    Input('apply-filters-button', 'n_clicks'),
+    State('table-dropdown', 'value'),
+    State('column-dropdown', 'value'),
+    State({'type': 'graph-type-dropdown', 'index': dash.dependencies.ALL}, 'value')
+)
+def update_plot(n_clicks, selected_tables, selected_columns, graph_types):
+    if not n_clicks:
+        raise PreventUpdate
+
     try:
+        mysql_conn = connect_to_mysql("localhost", "root", "2005", "project_security")
+        if not selected_tables or not selected_columns:
+            return "Please select tables and columns."
+
+        columns_by_table = {}
+        for col in selected_columns:
+            table, column = col.split(':')
+            if table not in columns_by_table:
+                columns_by_table[table] = []
+            columns_by_table[table].append(column)
+
+        data = retrieve_data_from_tables(mysql_conn, list(columns_by_table.keys()), columns_by_table)
         if not data:
-            messagebox.showwarning("No Data", "No data available for plotting.")
-            return
-        for table, df in data.items():
-            if df.empty:
-                continue
-            fig, axs = plt.subplots(1, 3, figsize=(18, 5))
-            # Create subplots for Bar, Pie, and Area plots
-            axs[0].set_title(f"Bar Graph for {table}")
-            for column in df.columns:
-                if df[column].dtype == 'object':  # String data
-                    pivot_df = df[column].value_counts().sort_values(ascending=False)
-                    pivot_df.plot(kind='bar', ax=axs[0])
-                else:  # Numeric data
-                    sorted_df = df[column].sort_values(ascending=False)
-                    sorted_df.plot(kind='bar', ax=axs[0])
+            return "No data found."
 
-            axs[1].set_title(f"Pie Chart for {table}")
-            for column in df.columns:
-                if df[column].dtype == 'object':  # String data
-                    pivot_df = df[column].value_counts().sort_values(ascending=False)
-                    pivot_df.plot(kind='pie', ax=axs[1])
-                else:  # Numeric data
-                    sorted_df = df[column].sort_values(ascending=False)
-                    sorted_df.plot(kind='pie', ax=axs[1])
+        graph_types_dict = {col: graph_types[i] for i, col in enumerate(selected_columns)}
+        figures = plot_data(data, graph_types_dict)
+        return [dcc.Graph(figure=fig) for fig in figures]
 
-            axs[2].set_title(f"Area Chart for {table}")
-            for column in df.columns:
-                if df[column].dtype == 'object':  # String data
-                    pivot_df = df[column].value_counts().sort_index()
-                    pivot_df.plot(kind='area', ax=axs[2], alpha=0.5)
-                else:  # Numeric data
-                    sorted_df = df[column].sort_values(ascending=False)
-                    sorted_df.plot(kind='area', ax=axs[2], alpha=0.5)
-            axs[2].legend(df.columns)
-            plt.tight_layout()
-            plt.show()
     except Exception as e:
-        print(f"Error plotting data: {e}")
-        messagebox.showerror("Error", f"Error plotting data: {e}")
-
-def display_data_in_table(df):
-    table_window = tk.Toplevel()
-    table_window.title("Data Table")
-    frame = tk.Frame(table_window)
-    frame.pack(fill=tk.BOTH, expand=True)
-    canvas = tk.Canvas(frame)
-    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    v_scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
-    v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    h_scrollbar = ttk.Scrollbar(frame, orient="horizontal", command=canvas.xview)
-    h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-    scrollable_frame = tk.Frame(canvas)
-    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-    scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-    table = ttk.Treeview(scrollable_frame, show="headings")
-    table.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    table["columns"] = list(df.columns)
-    for col in df.columns:
-        table.heading(col, text=col)
-        table.column(col, anchor="w")
-    for index, row in df.iterrows():
-        table.insert("", "end", values=list(row))
-    table_window.mainloop()
-
-def create_table_checkboxes(mysql_conn):
-    for widget in checkbox_frame.winfo_children():
-        widget.destroy()
-    canvas = tk.Canvas(checkbox_frame)
-    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    v_scrollbar = ttk.Scrollbar(checkbox_frame, orient="vertical", command=canvas.yview)
-    v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    scrollable_frame = tk.Frame(canvas)
-    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-    scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.configure(yscrollcommand=v_scrollbar.set)
-    try:
-        cursor = mysql_conn.cursor()
-        cursor.execute("SHOW TABLES")
-        tables = [table[0] for table in cursor.fetchall()]
-        global table_vars
-        global column_vars
-        table_vars = {}
-        column_vars = {}
-        for table in tables:
-            table_var = tk.BooleanVar()
-            table_checkbox = tk.Checkbutton(scrollable_frame, text=table, variable=table_var)
-            table_checkbox.pack(anchor="w")
-            table_vars[table] = table_var
-            cursor.execute(f"SHOW COLUMNS FROM `{table}`")
-            columns = [col[0] for col in cursor.fetchall()]
-            col_vars = []
-            for col in columns:
-                col_var = tk.BooleanVar()
-                col_checkbox = tk.Checkbutton(scrollable_frame, text=col, variable=col_var)
-                col_checkbox.pack(anchor="w", padx=20)
-                col_vars.append((col, col_var))
-            column_vars[table] = col_vars
-    except mysql.connector.Error as e:
-        print(f"Error retrieving tables: {e}")
-        messagebox.showerror("Error", f"Error retrieving tables: {e}")
-
-def retrieve_data_ui():
-    selected_tables = [table for table, var in table_vars.items() if var.get()]
-    selected_columns = {table: [col for col, var in column_vars[table] if var.get()] for table in selected_tables}
-    data = retrieve_data_from_tables(mysql_conn, selected_tables, selected_columns)
-    apply_filters_ui(data)
-
-def main():
-    global mysql_conn
-    mysql_conn = connect_to_mysql("localhost", "root", "password", "project_security") #Enter your mysql credentials! 
-    if mysql_conn:
-        create_tables(mysql_conn)
-        root = tk.Tk()
-        root.title("Security Auditing Dashboard")
-        
-        bg_image = Image.open("C:\\Users\\hp\\Downloads\\bgimg.png") #Enter the path of your background image with extension!!
-        bg_image = bg_image.resize((root.winfo_screenwidth(), root.winfo_screenheight()), Image.LANCZOS)
-        bg_photo = ImageTk.PhotoImage(bg_image)
-        bg_label = tk.Label(root, image=bg_photo)
-        bg_label.place(relwidth=1, relheight=1)
-
-        def register_user_ui():
-            username = username_entry.get()
-            password = password_entry.get()
-            if username == "" or password == "":
-                messagebox.showerror("Error", "Username and password cannot be empty!")
-                return
-            register_user(mysql_conn, username, password)
-
-        def login_user_ui():
-            username = username_entry.get()
-            password = password_entry.get()
-            if username == "" or password == "":
-                messagebox.showerror("Error", "Username and password cannot be empty!")
-                return
-            if login_user(mysql_conn, username, password):
-                import_frame.grid(row=4, column=0, columnspan=2, pady=10, sticky="ew")
-                select_frame.grid(row=5, column=0, columnspan=2, pady=10, sticky="ew")
-                create_table_checkboxes(mysql_conn)
-
-        def browse_excel_file():
-            file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
-            excel_file_entry.delete(0, tk.END)
-            excel_file_entry.insert(0, file_path)
-
-        def import_data():
-            excel_file = excel_file_entry.get()
-            username = username_entry.get()
-            if not excel_file:
-                messagebox.showerror("Error", "Please select an Excel file first.")
-                return
-            xls = pd.ExcelFile(excel_file)
-            sheet_names = xls.sheet_names
-            already_imported = False
-            for sheet_name in sheet_names:
-                if has_data_been_imported(mysql_conn, sheet_name, username):
-                    messagebox.showinfo("Info", f"The sheet '{sheet_name}' has already been imported.")
-                    already_imported = True
-            if not already_imported:
-                load_excel_to_mysql(mysql_conn, excel_file, username)
-                create_table_checkboxes(mysql_conn)
-
-        tk.Label(root, text="Username:", bg='lightgrey').grid(row=0, column=0, padx=10, pady=5, sticky="e")
-        username_entry = tk.Entry(root)
-        username_entry.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
-        tk.Label(root, text="Password:", bg='lightgrey').grid(row=1, column=0, padx=10, pady=5, sticky="e")
-        password_entry = tk.Entry(root, show="*")
-        password_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
-        tk.Button(root, text="Register", command=register_user_ui).grid(row=2, column=0, padx=10, pady=10, sticky="ew")
-        tk.Button(root, text="Login", command=login_user_ui).grid(row=2, column=1, padx=10, pady=10, sticky="ew")
-
-        import_frame = tk.Frame(root, bg='lightgrey')
-        tk.Label(import_frame, text="Excel File:", bg='lightgrey').grid(row=0, column=0, padx=10, pady=5, sticky="e")
-        excel_file_entry = tk.Entry(import_frame, width=50)
-        excel_file_entry.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
-        tk.Button(import_frame, text="Browse", command=browse_excel_file).grid(row=0, column=2, padx=10, pady=5)
-        tk.Button(import_frame, text="Import Data", command=import_data).grid(row=1, column=0, columnspan=3, pady=10)
-
-        select_frame = tk.Frame(root, bg='lightgrey')
-        global checkbox_frame
-        checkbox_frame = tk.Frame(select_frame, bg='lightgrey')
-        checkbox_frame.grid(row=0, column=0, sticky="nsew")
-        tk.Button(select_frame, text="Retrieve Data", command=retrieve_data_ui).grid(row=1, column=0, pady=10)
-
-        import_frame.grid(row=4, column=0, columnspan=2, pady=10, sticky="ew")
-        select_frame.grid(row=5, column=0, columnspan=2, pady=10, sticky="ew")
-
-        root.mainloop()
-
+        print(f"Error during plot update: {e}")
+        return "Error during plot update."
+    
+    
 if __name__ == "__main__":
-    main()
+    app.run_server(debug=True)
+
