@@ -16,6 +16,8 @@ The Security Auditing Dashboard is a Dash web application for security auditing 
 
 ## Usage
 
+Open your web browser and navigate to http://127.0.0.1:8050 to access the application.
+
 - **User Authentication**
 
 Register: Enter a username and password, then click "Register" to create a new user.
