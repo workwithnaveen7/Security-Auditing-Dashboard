@@ -14,18 +14,23 @@ The Security Auditing Dashboard is a Dash web application for security auditing 
   
 - **Data Visualization:** Plot data with bar, pie, and area charts using Plotly.
 
-**Usage**
+## Usage
 
-## User Authentication
+- **User Authentication**
 Register: Enter a username and password, then click "Register" to create a new user.
+
 Login: Enter your username and password, then click "Login" to access the dashboard.
-## Data Import
+- **Data Import**
 Upload Excel File: Drag and drop or select an Excel file to upload.
+
 Import Data: Click "Import Data" to upload the data into the MySQL database.
-## Data Visualization
+- **Data Visualization**
 Retrieve Data: Click "Retrieve Data" to load available tables and columns from the database.
+
 Select Tables and Columns: Choose tables and columns you want to visualize.
+
 Choose Graph Types: Select the type of graph (bar, pie, area) for each column.
+
 Plot Graph: Click "Plot Graph" to generate and view visualizations.
 
 
@@ -41,7 +46,7 @@ mysql-connector-python
 pip install dash dash-bootstrap-components plotly pandas mysql-connector-python
 
 
-**Contact**
+## Contact
 
 For any questions or suggestions, feel free to contact me via gmail
 workwithnaveen7@gmail.com
