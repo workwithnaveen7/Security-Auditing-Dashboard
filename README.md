@@ -37,12 +37,13 @@ Choose Graph Types: Select the type of graph (bar, pie, area) for each column.
 Plot Graph: Click "Plot Graph" to generate and view visualizations.
 
 
-**Dependencies**
-Dash
-Dash Bootstrap Components
-Plotly
-Pandas
-mysql-connector-python
+## Dependencies
+
+Dash,
+Dash Bootstrap Components,
+Plotly,
+Pandas,
+mysql-connector-python,
 
 
 **Install dependencies with:**
