@@ -22,10 +22,12 @@ Register: Enter a username and password, then click "Register" to create a new u
 
 Login: Enter your username and password, then click "Login" to access the dashboard.
 - **Data Import**
+
 Upload Excel File: Drag and drop or select an Excel file to upload.
 
 Import Data: Click "Import Data" to upload the data into the MySQL database.
 - **Data Visualization**
+
 Retrieve Data: Click "Retrieve Data" to load available tables and columns from the database.
 
 Select Tables and Columns: Choose tables and columns you want to visualize.
