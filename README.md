@@ -1,65 +1,45 @@
 `Security Auditing Dashboard`
 
 
-The Security Auditing Dashboard is a Python-based GUI application designed to streamline the process of importing, managing, retrieving, and visualizing security-related data. This project integrates multiple technologies to provide a comprehensive tool for security audits and data analysis.
+The Security Auditing Dashboard is a Dash web application for security auditing and data visualization. This application allows users to register, log in, upload Excel files, and visualize data from MySQL databases with various types of graphs.
 
 
-<ins>**Features:**</ins>
+## Features
+
+- **User Authentication:** Register and log in users.
+  
+- **Excel Data Import:** Upload Excel files and import data into MySQL tables.
+  
+- **Data Retrieval:** Retrieve data from MySQL tables and columns.
+  
+- **Data Visualization:** Plot data with bar, pie, and area charts using Plotly.
+
+**Usage**
+
+## User Authentication
+Register: Enter a username and password, then click "Register" to create a new user.
+Login: Enter your username and password, then click "Login" to access the dashboard.
+## Data Import
+Upload Excel File: Drag and drop or select an Excel file to upload.
+Import Data: Click "Import Data" to upload the data into the MySQL database.
+## Data Visualization
+Retrieve Data: Click "Retrieve Data" to load available tables and columns from the database.
+Select Tables and Columns: Choose tables and columns you want to visualize.
+Choose Graph Types: Select the type of graph (bar, pie, area) for each column.
+Plot Graph: Click "Plot Graph" to generate and view visualizations.
 
 
-<ins>User Management</ins>
-
-
-Registration and Login: Secure user registration and authentication using MySQL.
-
-Error Handling: Robust error handling with user feedback for registration and login processes.
-
-
-<ins>Data Import and Management</ins>
-
-
-Excel Data Import: Capability to import data from Excel files into a MySQL database.
-
-Dynamic Table Creation: Automatic creation of database tables based on the structure of the imported Excel sheets.
-
-Import Logs: Maintenance of import logs to prevent duplicate data imports.
-
-
-<ins>Data Retrieval and Visualization</ins>
-
-
-Custom Data Selection: Users can select specific tables and columns for data retrieval.
-
-Data Visualization: Visualization of retrieved data using various plot types (Bar Graph, Pie Chart, Scatter Plot) via Matplotlib.
-
-Filtering: Apply filters to the data to narrow down the results.
-
-
-
-<ins>**Technical Stack**</ins>
-
-Programming Language: Python
-
-Libraries and Frameworks: Tkinter, Pandas, Matplotlib, MySQL Connector, PIL (Python Imaging Library)
-
-Database: MySQL
-
-**Prerequisites**
-Python
-
-MySQL
-
-Required Python libraries:
-
-tkinter
-
-pandas
-
+**Dependencies**
+Dash
+Dash Bootstrap Components
+Plotly
+Pandas
 mysql-connector-python
 
-matplotlib
 
-pillow
+**Install dependencies with:**
+pip install dash dash-bootstrap-components plotly pandas mysql-connector-python
+
 
 **Contact**
 
