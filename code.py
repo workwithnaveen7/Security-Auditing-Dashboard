@@ -5,6 +5,7 @@ from dash.exceptions import PreventUpdate
 import pandas as pd
 import mysql.connector
 import plotly.express as px
+import hashlib
 import base64
 import io
 
@@ -36,6 +37,7 @@ def create_tables(connection):
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(255) NOT NULL,
         table_name VARCHAR(255) NOT NULL,
+        data_hash VARCHAR(255) NOT NULL,
         import_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )"""
     try:
@@ -46,6 +48,8 @@ def create_tables(connection):
         print("Tables 'users' and 'import_logs' created successfully")
     except mysql.connector.Error as e:
         print(f"Error creating tables: {e}")
+
+
 
 def register_user(connection, username, password):
     insert_query = """
@@ -77,13 +81,32 @@ def login_user(connection, username, password):
         print(f"Error authenticating user: {e}")
         return False
 
+
+def generate_data_hash(df):
+    """Generate a hash for the given DataFrame."""
+    data_string = df.to_csv(index=False)
+    return hashlib.md5(data_string.encode()).hexdigest()
+
 def load_excel_to_mysql(mysql_conn, excel_file, username):
     try:
         xls = pd.ExcelFile(excel_file)
         for sheet_name in xls.sheet_names:
             df = pd.read_excel(excel_file, sheet_name=sheet_name)
             df = df.where(pd.notnull(df), None)
+
+            data_hash = generate_data_hash(df)
+
             cursor = mysql_conn.cursor()
+            # Check if this data has already been imported
+            cursor.execute(
+                "SELECT * FROM import_logs WHERE table_name = %s AND data_hash = %s",
+                (sheet_name, data_hash)
+            )
+            if cursor.fetchone():
+                print(f"Data from sheet '{sheet_name}' has already been imported.")
+                continue
+
+            # Create table if it doesn't exist
             create_table_query = f"CREATE TABLE IF NOT EXISTS `{sheet_name}` ("
             for col in df.columns:
                 dtype = 'VARCHAR(255)'
@@ -96,26 +119,42 @@ def load_excel_to_mysql(mysql_conn, excel_file, username):
                 create_table_query += f"`{col}` {dtype}, "
             create_table_query = create_table_query.rstrip(', ') + ")"
             cursor.execute(create_table_query)
+
+            # Insert data into the table
             columns = ', '.join([f'`{col}`' for col in df.columns])
             placeholders = ', '.join(['%s'] * len(df.columns))
             insert_query = f"INSERT INTO `{sheet_name}` ({columns}) VALUES ({placeholders})"
             for index, row in df.iterrows():
                 row = tuple(str(val)[:255] if isinstance(val, str) else val for val in row)
                 cursor.execute(insert_query, row)
-            log_query = "INSERT INTO import_logs (username, table_name, import_time) VALUES (%s, %s, NOW())"
-            cursor.execute(log_query, (username, sheet_name))
+
+            # Log the import
+            log_query = "INSERT INTO import_logs (username, table_name, data_hash, import_time) VALUES (%s, %s, %s, NOW())"
+            cursor.execute(log_query, (username, sheet_name, data_hash))
+
             mysql_conn.commit()
             print(f"Data from sheet '{sheet_name}' imported successfully by {username}")
     except mysql.connector.Error as e:
         print(f"Error importing data to MySQL: {e}")
 
-def retrieve_data_from_tables(mysql_conn, selected_tables, selected_columns):
+def retrieve_data_from_tables(mysql_conn, selected_tables, selected_columns, filters):
     try:
         cursor = mysql_conn.cursor()
         data = {}
         for table in selected_tables:
             columns = ', '.join([f"`{col}`" for col in selected_columns.get(table, [])])
-            cursor.execute(f"SELECT {columns} FROM `{table}`")
+            query = f"SELECT {columns} FROM `{table}`"
+            filter_clauses = []
+            filter_values = []
+            for col, val in filters.items():
+                if val:
+                    filter_clauses.append(f"`{col.split(':')[1]}` = %s")
+                    filter_values.append(val)
+            if filter_clauses:
+                query += " WHERE " + " AND ".join(filter_clauses)
+            print(f"Executing query: {query}")
+            print(f"With values: {filter_values}")
+            cursor.execute(query, filter_values)
             rows = cursor.fetchall()
             column_names = [desc[0] for desc in cursor.description]
             data[table] = pd.DataFrame(rows, columns=column_names)
@@ -134,7 +173,14 @@ def plot_data(data, graph_types):
             if df[column].dtype == 'object':  # String data
                 counts = df[column].value_counts()
                 if graph_type == "bar":
-                    fig = px.bar(counts, title=f"Bar Graph for {table} - {column}")
+                    fig = px.bar(
+                        counts,
+                        title=f"Bar Graph for {table} - {column}",
+                        labels={'index': column, 'value': 'Count'},
+                        color=counts.index,  # Use this line to color each bar differently
+                        text=counts.values   # Display counts above each bar
+                    )
+                    fig.update_traces(textposition='outside')  # Position the text outside the bars
                 elif graph_type == "pie":
                     fig = px.pie(names=counts.index, values=counts.values, title=f"Pie Chart for {table} - {column}")
                 elif graph_type == "area":
@@ -142,21 +188,28 @@ def plot_data(data, graph_types):
                 else:
                     continue
                 figures.append(fig)
-                
             else:  # Numeric data
                 if graph_type == "bar":
-                    fig = px.bar(df[column].sort_values(ascending=False), title=f"Bar Graph for {table} - {column}")
+                    fig = px.bar(
+                        df,
+                        x=df.index,
+                        y=column,
+                        title=f"Bar Graph for {table} - {column}",
+                        labels={'index': 'Index', column: 'Value'},
+                        color=df.index,  # Use this line to color each bar differently
+                        text=column   # Display values above each bar
+                    )
+                    fig.update_traces(textposition='outside')  # Position the text outside the bars
                 elif graph_type == "pie":
                     if df[column].nunique() <= 10:  # Example condition
-                        fig = px.pie(df[column].value_counts(), title=f"Pie Chart for {table} - {column}")
+                        fig = px.pie(df, names=df.index, values=column, title=f"Pie Chart for {table} - {column}")
                     else:
                         continue
                 elif graph_type == "area":
-                    fig = px.area(df[column].sort_values(ascending=False), title=f"Area Chart for {table} - {column}")
+                    fig = px.area(df, x=df.index, y=column, title=f"Area Chart for {table} - {column}")
                 else:
                     continue
                 figures.append(fig)
-                
     return figures
 
 app.layout = dbc.Container([
@@ -180,7 +233,7 @@ app.layout = dbc.Container([
                     html.Div(id="login-output")
                 ])
             ])
-        ], width=4)
+        ], width=15)
     ]),
     dbc.Row([
         dbc.Col([
@@ -205,29 +258,61 @@ app.layout = dbc.Container([
                                 'margin': '10px'
                             },
                             multiple=False
-                        ), width=8)
+                        ), width=15)
                     ]),
-                    dbc.Button("Import Data", id="import-data-button", color="primary", className="mr-2"),
-                    html.Div(id="import-output")
+                    html.Div(id='upload-output')
                 ])
             ])
-        ], width=8)
+        ], width=15)
     ]),
     dbc.Row([
         dbc.Col([
             dbc.Card([
                 dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col(dbc.Label("Select Table"), width=4),
+                        dbc.Col(dcc.Dropdown(id='table-dropdown', multi=True), width=8)
+                    ]),
+                    dbc.Row([
+                        dbc.Col(dbc.Label("Select Columns"), width=4),
+                        dbc.Col(dcc.Dropdown(id='column-dropdown', multi=True), width=8)
+                    ]),
+                    html.Div(id='filter-inputs-container'),
+                    html.Div(id='graph-type-dropdowns-container'),
                     dbc.Button("Retrieve Data", id="retrieve-data-button", color="primary", className="mr-2"),
-                    dcc.Dropdown(id="table-dropdown", multi=True, placeholder="Select tables", style={'width': '100%'}),
-                    dcc.Dropdown(id="column-dropdown", multi=True, placeholder="Select columns", style={'width': '100%'}),
-                    html.Div(id="column-graph-type-container"),
-                    dbc.Button("Plot Graph", id="apply-filters-button", color="secondary", className="mr-2"),
-                    html.Div(id="plot-output")
+                    dbc.Button("Plot Graph", id="apply-filters-button", color="secondary"),
+                    html.Div(id='plot-output')
                 ])
             ])
         ], width=12)
     ])
-], fluid=True)
+])
+
+@app.callback(
+    Output('upload-output', 'children'),
+    Input('upload-data', 'contents'),
+    State('upload-data', 'filename'),
+    State('username', 'value')
+)
+def handle_file_upload(contents, filename, username):
+    if contents is None:
+        return "No file uploaded."
+    
+    if not username:
+        return "Please login first."
+
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
+    try:
+        excel_file = io.BytesIO(decoded)
+        mysql_conn = connect_to_mysql("localhost", "root", "2005", "project_security")
+        if mysql_conn:
+            create_tables(mysql_conn)
+        load_excel_to_mysql(mysql_conn, excel_file, username)
+        return f"File '{filename}' uploaded and data imported successfully."
+    except Exception as e:
+        print(f"Error handling file upload: {e}")
+        return f"Error uploading file: {e}"
 
 @app.callback(
     Output('login-output', 'children'),
@@ -269,7 +354,6 @@ def authenticate(register_clicks, login_clicks, username, password):
         else:
             return "Invalid username or password."
 
-
 @app.callback(
     [Output('table-dropdown', 'options'),
      Output('column-dropdown', 'options')],
@@ -304,39 +388,62 @@ def update_dropdowns(n_clicks, selected_tables):
             return [], []
 
 @app.callback(
-    Output('column-graph-type-container', 'children'),
+    Output('filter-inputs-container', 'children'),
+    Input('column-dropdown', 'value')
+)
+def update_filter_inputs(selected_columns):
+    if not selected_columns:
+        return ""
+
+    filter_inputs = []
+    for col in selected_columns:
+        filter_inputs.append(
+            dbc.Row([
+                dbc.Col(dbc.Label(f"Filter for {col}"), width=4),
+                dbc.Col(dbc.Input(id={'type': 'filter-input', 'index': col}, type='text', placeholder=f"Enter filter for {col}"), width=8)
+            ])
+        )
+
+    return filter_inputs
+
+@app.callback(
+    Output('graph-type-dropdowns-container', 'children'),
     Input('column-dropdown', 'value')
 )
 def update_graph_type_dropdowns(selected_columns):
     if not selected_columns:
         return ""
 
-    options = [{'label': graph_type, 'value': graph_type} for graph_type in ["bar", "pie", "area"]]
-
-    dropdowns = []
+    graph_type_dropdowns = []
     for col in selected_columns:
-        dropdowns.append(
+        graph_type_dropdowns.append(
             dbc.Row([
                 dbc.Col(dbc.Label(f"Graph Type for {col}"), width=4),
                 dbc.Col(dcc.Dropdown(
                     id={'type': 'graph-type-dropdown', 'index': col},
-                    options=options,
-                    value='bar',
-                    style={'width': '100%'}
+                    options=[
+                        {'label': 'Bar Graph', 'value': 'bar'},
+                        {'label': 'Pie Chart', 'value': 'pie'},
+                        {'label': 'Area Chart', 'value': 'area'}
+                    ],
+                    value='bar'
                 ), width=8)
             ])
         )
 
-    return dropdowns
+    return graph_type_dropdowns
 
 @app.callback(
     Output('plot-output', 'children'),
     Input('apply-filters-button', 'n_clicks'),
     State('table-dropdown', 'value'),
     State('column-dropdown', 'value'),
-    State({'type': 'graph-type-dropdown', 'index': dash.dependencies.ALL}, 'value')
+    State({'type': 'filter-input', 'index': dash.dependencies.ALL}, 'value'),
+    State({'type': 'filter-input', 'index': dash.dependencies.ALL}, 'id'),
+    State({'type': 'graph-type-dropdown', 'index': dash.dependencies.ALL}, 'value'),
+    State({'type': 'graph-type-dropdown', 'index': dash.dependencies.ALL}, 'id')
 )
-def update_plot(n_clicks, selected_tables, selected_columns, graph_types):
+def update_plot(n_clicks, selected_tables, selected_columns, filter_values, filter_ids, graph_types, graph_type_ids):
     if not n_clicks:
         raise PreventUpdate
 
@@ -346,25 +453,42 @@ def update_plot(n_clicks, selected_tables, selected_columns, graph_types):
             return "Please select tables and columns."
 
         columns_by_table = {}
+        filters = {}
         for col in selected_columns:
             table, column = col.split(':')
             if table not in columns_by_table:
                 columns_by_table[table] = []
             columns_by_table[table].append(column)
 
-        data = retrieve_data_from_tables(mysql_conn, list(columns_by_table.keys()), columns_by_table)
+        for i, id_dict in enumerate(filter_ids):
+            filters[id_dict['index']] = filter_values[i]
+
+        graph_types_dict = {}
+        for i, id_dict in enumerate(graph_type_ids):
+            graph_types_dict[id_dict['index']] = graph_types[i]
+
+        print(f"Selected tables: {selected_tables}")
+        print(f"Selected columns: {selected_columns}")
+        print(f"Filters: {filters}")
+        print(f"Graph types: {graph_types_dict}")
+
+        data = retrieve_data_from_tables(mysql_conn, list(columns_by_table.keys()), columns_by_table, filters)
         if not data:
             return "No data found."
 
-        graph_types_dict = {col: graph_types[i] for i, col in enumerate(selected_columns)}
+        print("Data retrieved successfully")
+
         figures = plot_data(data, graph_types_dict)
         return [dcc.Graph(figure=fig) for fig in figures]
 
     except Exception as e:
         print(f"Error during plot update: {e}")
-        return "Error during plot update."
-    
-    
-if __name__ == "__main__":
+        return f"Error during plot update: {e}"
+
+if __name__ == '__main__':
     app.run_server(debug=True)
+# Establish the MySQL connection at the start of the application
+    mysql_conn = connect_to_mysql("localhost", "root", "2005", "project_security")
+    if mysql_conn:
+        create_tables(mysql_conn)
 
