@@ -1,44 +1,46 @@
-## `Security Auditing Dashboard`
+## Security Auditing Dashboard
 
 
-The Security Auditing Dashboard is a Dash web application for security auditing and data visualization. This application allows users to register, log in, upload Excel files, and visualize data from MySQL databases with various types of graphs and using filters
+Welcome to the Security Auditing Dashboard project! This application provides a web-based interface for uploading, analyzing, and visualizing data from Excel files. It uses Dash, Plotly, and MySQL to deliver a powerful tool for security auditing and data visualization.
 
 
 ## Features
 
-- **User Authentication:** Register and log in users.
+- **User Authentication:** Register and login functionality to manage user access.
   
-- **Excel Data Import:** Upload Excel files and import data into MySQL tables.
-  
-- **Data Retrieval:** Retrieve data from MySQL tables and columns.
-  
-- **Data Visualization:** Plot data with bar, pie, line, word cloud and sankey graphs using Plotly.
+- **Excel File Upload:** Upload Excel files and import the data into a MySQL database.
 
-- **Filtering:** Users can apply filters and dynamically visulaize the data.
+- **Data Visualization:** Generate bar graphs, pie charts, line charts, word clouds, and Sankey diagrams from the imported data.
+
+- **Dynamic Filtering:** Apply filters to the data before plotting graphs.
+
+- **Customizable Graph Types:** Select different types of graphs for each column in the data.
 
 ## Usage
 
-Open your web browser and navigate to http://127.0.0.1:8050 to access the application.
+1. Access the Dashboard:
 
-- **User Authentication**
+Open your web browser and navigate to http://127.0.0.1:8050.
 
-Register: Enter a username and password, then click "Register" to create a new user.
+2. Register and Login:
 
-Login: Enter your username and password, then click "Login" to access the dashboard.
-- **Data Import**
+Register a new user or login with an existing username and password.
 
-Upload Excel File: Drag and drop or select an Excel file to upload.
+3. Upload Excel File:
 
-Import Data: Click "Import Data" to upload the data into the MySQL database.
-- **Data Visualization**
+Drag and drop an Excel file into the designated area.
 
-Retrieve Data: Click "Retrieve Data" to load available tables and columns from the database.
+4. Select Tables and Columns:
 
-Select Tables and Columns: Choose tables and columns you want to visualize.
+Use the dropdown menus to select tables and columns to analyze.
 
-Choose Graph Types: Select the type of graph (bar, pie, area) for each column.
+5. Apply Filters:
 
-Plot Graph: Click "Plot Graph" to generate and view visualizations.
+Enter filter criteria for selected columns if needed.
+
+6. Generate Plots:
+
+Choose the type of plot for each column and visualize the data.
 
 
 ## Dependencies
@@ -48,10 +50,13 @@ Dash Bootstrap Components,
 Plotly,
 Pandas,
 mysql-connector-python,
+word cloud,
+matplotlib,
+hashlib
 
 
 **Install dependencies with:**
-pip install dash dash-bootstrap-components plotly pandas mysql-connector-python
+pip install dash dash-bootstrap-components plotly pandas mysql-connector-python matplotlib hashlib
 
 
 ## Contact
