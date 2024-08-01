@@ -12,7 +12,7 @@ The Security Auditing Dashboard is a Dash web application for security auditing 
   
 - **Data Retrieval:** Retrieve data from MySQL tables and columns.
   
-- **Data Visualization:** Plot data with bar, pie, and area charts using Plotly.
+- **Data Visualization:** Plot data with bar, pie, line, word cloud and sankey graphs using Plotly.
 
 ## Usage
 
