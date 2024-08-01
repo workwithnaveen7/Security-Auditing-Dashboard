@@ -1,4 +1,4 @@
-`Security Auditing Dashboard`
+## `Security Auditing Dashboard`
 
 
 The Security Auditing Dashboard is a Dash web application for security auditing and data visualization. This application allows users to register, log in, upload Excel files, and visualize data from MySQL databases with various types of graphs and using filters
