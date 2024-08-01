@@ -14,6 +14,8 @@ The Security Auditing Dashboard is a Dash web application for security auditing 
   
 - **Data Visualization:** Plot data with bar, pie, line, word cloud and sankey graphs using Plotly.
 
+- **Filtering:** Users can apply filters and dynamically visulaize the data.
+
 ## Usage
 
 Open your web browser and navigate to http://127.0.0.1:8050 to access the application.
