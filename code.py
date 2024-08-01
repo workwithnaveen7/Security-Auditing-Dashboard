@@ -9,8 +9,11 @@ import plotly.graph_objects as go
 import hashlib
 import base64
 import io
-from wordcloud import WordCloud
+from wordcloud import WordCloud, STOPWORDS
 import matplotlib.pyplot as plt
+import random
+import numpy as np
+from collections import Counter, defaultdict
 
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -52,7 +55,6 @@ def create_tables(connection):
         print("Tables 'users' and 'import_logs' created successfully")
     except mysql.connector.Error as e:
         print(f"Error creating tables: {e}")
-
 
 
 def register_user(connection, username, password):
@@ -167,21 +169,7 @@ def retrieve_data_from_tables(mysql_conn, selected_tables, selected_columns, fil
         print(f"Error retrieving data from MySQL: {e}")
         return {}
 
-
-import plotly.graph_objects as go
-from wordcloud import WordCloud
-import numpy as np
-from PIL import Image
-import pandas as pd
-from collections import Counter
-import io
-
-import plotly.graph_objects as go
-import pandas as pd
-
-import plotly.graph_objects as go
-import pandas as pd
-from collections import defaultdict
+# For plotting various graphs
 
 def plot_data(data, graph_types):
     figures = []
@@ -195,6 +183,7 @@ def plot_data(data, graph_types):
                 if len(df.columns) >= 2:
                     # Collect unique nodes and create index mapping
                     node_labels = []
+                    node_values = defaultdict(int)
                     links = defaultdict(lambda: {'source': [], 'target': [], 'value': []})
                     node_map = {}
 
@@ -222,16 +211,42 @@ def plot_data(data, graph_types):
                             links[(source_col, target_col)]['target'].append(target_index)
                             links[(source_col, target_col)]['value'].append(1)  # Default value
 
+                            # Update node values
+                            node_values[source_node] += 1
+                            node_values[target_node] += 1
+
                     # Prepare Sankey diagram data
                     all_sources = []
                     all_targets = []
                     all_values = []
+                    link_labels = []
 
+                    # Aggregate link values
+                    aggregated_links = defaultdict(int)
                     for link in links.values():
-                        all_sources.extend(link['source'])
-                        all_targets.extend(link['target'])
-                        all_values.extend(link['value'])
+                        for src, tgt, val in zip(link['source'], link['target'], link['value']):
+                            aggregated_links[(src, tgt)] += val
 
+                    # Calculate total flow
+                    total_flow = sum(aggregated_links.values())
+
+                    # Create node labels with quantity and percentage
+                    node_labels = []
+                    for node in node_map:
+                        quantity = node_values[node]
+                        percentage = (quantity / total_flow) * 100
+                        node_labels.append(f"{node}: {quantity} ({percentage:.1f}%)")
+
+                    # Extract aggregated data
+                    aggregated_sources = []
+                    aggregated_targets = []
+                    aggregated_values = []
+                    for (src, tgt), val in aggregated_links.items():
+                        aggregated_sources.append(src)
+                        aggregated_targets.append(tgt)
+                        aggregated_values.append(val)
+
+                    # Create Sankey figure with light blue link color
                     fig = go.Figure(go.Sankey(
                         node=dict(
                             pad=15,
@@ -240,17 +255,22 @@ def plot_data(data, graph_types):
                             label=node_labels,
                         ),
                         link=dict(
-                            source=all_sources,
-                            target=all_targets,
-                            value=all_values
+                            source=aggregated_sources,
+                            target=aggregated_targets,
+                            value=aggregated_values,
+                            color='lightblue',  # Set the link color to light blue
+                            # Optionally, if you want labels for links, you can add them here
+                            # label=link_labels
                         )
                     ))
+
                     fig.update_layout(
                         title_text=f"Sankey Diagram for {table}",
-                        height=800,
-                        width=1300,
-                        font=dict(size=14)  # Adjust the font size here
+                        height=900,
+                        width=1400,
+                        font=dict(size=18)  # Adjust the font size here
                     )
+                    
                     figures.append(fig)
             else:
                 # Existing handling for other graph types
@@ -275,9 +295,11 @@ def plot_data(data, graph_types):
                     elif graph_type == "line":
                         counts = pd.Series(df[column].dropna().astype(str)). value_counts().sort_index()
                         fig = px.line(counts, title=f"Line Chart for {table} - {column}")
+
+
                     elif graph_type == "wordcloud":
                         word_freq = Counter(df[column].dropna().astype(str))
-                        top_words = dict(word_freq.most_common(15))  # Limit to top 15 words
+                        top_words = dict(word_freq.most_common(1000))  # Limit to top 15 words
 
                         # Modify word frequencies to handle multiline text
                         modified_top_words = {}
@@ -289,7 +311,18 @@ def plot_data(data, graph_types):
                             else:
                                 modified_top_words[short_word] = freq
 
-                        wordcloud = WordCloud(width=1500, height=1300, background_color='white').generate_from_frequencies(modified_top_words)
+                        def color_func(word, font_size, position, orientation, random_state=None, **kwargs):
+                            return "hsl({}, 100%, 50%)".format(random.randint(0, 255))
+
+                        wordcloud = WordCloud(width=1500, height=1300, 
+                                            background_color='white',
+                                            color_func=color_func,  # Custom color function
+                                            max_font_size=300, 
+                                            contour_color='steelblue', 
+                                            contour_width=1,
+                                            prefer_horizontal=1.0,
+                                            stopwords=set(STOPWORDS)
+                                            ).generate_from_frequencies(modified_top_words)
                         
                         # Save word cloud image to a file
                         img = wordcloud.to_image()
@@ -307,6 +340,7 @@ def plot_data(data, graph_types):
                     else:
                         continue
                     figures.append(fig)
+
                 else:  # Numeric data
                     if graph_type == "bar":
                         fig = px.bar(
@@ -591,7 +625,7 @@ def update_plot(n_clicks, selected_tables, selected_columns, filter_values, filt
                     {'label': 'Pie Chart', 'value': 'pie'},
                     {'label': 'Line Chart', 'value': 'line'},
                     {'label': 'WordCloud Graph', 'value': 'wordcloud'},
-                    {'label': 'Sankey Diagram', 'value': 'sankey'}  # Add Sankey option here
+                    {'label': 'Sankey Diagram', 'value': 'sankey'}  
                 ] ,
                 value=graph_type
             )
@@ -608,8 +642,8 @@ def update_plot(n_clicks, selected_tables, selected_columns, filter_values, filt
 
 if __name__ == '__main__':
     app.run_server(debug=True)
-# Establish the MySQL connection at the start of the application
+
+    #update the mysql credentials host, user, password, database
     mysql_conn = connect_to_mysql("localhost", "root", "2005", "project_security")
     if mysql_conn:
         create_tables(mysql_conn)
-
